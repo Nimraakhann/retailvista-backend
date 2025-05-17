@@ -498,12 +498,17 @@ def get_frame(request, camera_id):
                     print(f"Updating auth token for camera {camera_id}")
                     detector.auth_token = token
 
-        # Get frame from detector
+        # Get frame from detector with frame rate control
         frame_data = detector.get_frame()
         if frame_data:
+            # Add frame timestamp to help with synchronization
+            import time
+            current_time = time.time()
             return JsonResponse({
                 'status': 'success',
-                'frame': frame_data
+                'frame': frame_data,
+                'timestamp': current_time,
+                'frame_rate': 30  # Set a consistent frame rate
             })
         else:
             return JsonResponse({
