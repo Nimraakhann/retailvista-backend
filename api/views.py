@@ -2204,7 +2204,8 @@ def check_for_alerts(request):
         # Count unreviewed alerts
         unreviewed_count = ShopliftingAlert.objects.filter(
             camera__user=request.user,
-            is_reviewed=False
+            is_reviewed=False,
+            camera__is_active=True
         ).count()
         
         print(f"Found {unreviewed_count} unreviewed alerts")
@@ -2214,7 +2215,8 @@ def check_for_alerts(request):
         if unreviewed_count > 0:
             alert = ShopliftingAlert.objects.filter(
                 camera__user=request.user,
-                is_reviewed=False
+                is_reviewed=False,
+                camera__is_active=True
             ).select_related('camera').order_by('-timestamp').first()
             
             if alert:

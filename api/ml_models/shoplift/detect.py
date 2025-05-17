@@ -14,6 +14,11 @@ import io
 import tempfile
 from django.conf import settings
 
+# Set PyTorch threading only once at module level
+if torch.cuda.is_available():
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+
 class ShopliftDetector:
     def __init__(self):
         # Memory optimization 
