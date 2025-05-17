@@ -1,3 +1,4 @@
+import os
 import base64
 import cv2
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
