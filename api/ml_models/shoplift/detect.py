@@ -587,21 +587,29 @@ class ShopliftDetector:
             print(f"Detection initialized: FPS={self.fps}, main_buffer_size={self.buffer_size}, continuous_buffer_size={self.continuous_buffer_size}")
 
             frame_count = 0
+            last_frame_time = time.time()
+            frame_interval = 1.0 / self.fps  # Time between frames
+
             while self.is_running:
+                # Calculate time to wait for next frame
+                current_time = time.time()
+                elapsed = current_time - last_frame_time
+                if elapsed < frame_interval:
+                    time.sleep(frame_interval - elapsed)
+
                 ret, frame = cap.read()
                 if not ret:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset video
                     continue
 
                 frame_count += 1
-                if frame_count % 2 != 0:  # Process every other frame instead of every third
+                if frame_count % 2 != 0:  # Process every other frame
                     continue
 
                 # Process frame
                 frame = cv2.resize(frame, (self.target_width, self.target_height))
                 
-                # Add frame to continuous buffer first, before any detection processing
-                # This ensures we have clean frames for video recording
+                # Add frame to continuous buffer first
                 self.update_continuous_buffer(frame)
                 
                 with torch.no_grad():
@@ -617,7 +625,13 @@ class ShopliftDetector:
                         verbose=self.verbose
                     )
 
-                frame_result = {"label": "normal", "confidence": 0.0, "timestamp": datetime.now(), "frame": frame.copy()}
+                frame_result = {
+                    "label": "normal", 
+                    "confidence": 0.0, 
+                    "timestamp": datetime.now(), 
+                    "frame": frame.copy(),
+                    "frame_number": frame_count
+                }
                 
                 if len(results[0].boxes) > 0:
                     boxes = results[0].boxes
@@ -653,7 +667,6 @@ class ShopliftDetector:
                         self.total_events += len(boxes_np)
                         
                         # Modify labels based on confidence threshold
-                        # In test mode, lower the detection threshold
                         confidence_threshold = 0.3 if self.test_mode else 0.4
                         
                         mask = (labels == 1) & (scores < confidence_threshold)
@@ -668,7 +681,6 @@ class ShopliftDetector:
                         for i in range(len(boxes_np)):
                             box = boxes_np[i].astype(int)
                             score = scores[i]
-                            # Use adjusted threshold for test mode
                             is_suspicious = labels[i] == 1 and score >= confidence_threshold
                             label = "Suspicious" if is_suspicious else "Normal"
                             color = (0, 0, 255) if is_suspicious else (0, 255, 0)
@@ -690,7 +702,7 @@ class ShopliftDetector:
                             frame_result["label"] = "suspicious"
                             frame_result["confidence"] = max_suspicious_confidence
 
-                # Add frame to main buffer
+                # Add frame to main buffer with frame number for ordering
                 self.frame_buffer.append(frame_result)
                 
                 # Maintain sliding buffer
@@ -703,7 +715,7 @@ class ShopliftDetector:
                 # Check for alerts
                 self.check_for_alerts()
 
-                # Convert frame to base64
+                # Convert frame to base64 with consistent quality
                 _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
                 
@@ -713,8 +725,8 @@ class ShopliftDetector:
                 # Send analysis data if needed
                 self.send_analysis_data()
 
-                # Small delay to prevent CPU overload
-                time.sleep(0.01)
+                # Update last frame time
+                last_frame_time = time.time()
 
         except Exception as e:
             print(f"Error in detection loop: {e}")
