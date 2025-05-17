@@ -589,144 +589,163 @@ class ShopliftDetector:
             frame_count = 0
             last_frame_time = time.time()
             frame_interval = 1.0 / self.fps  # Time between frames
+            last_frame_data = None  # Store last successful frame
 
             while self.is_running:
-                # Calculate time to wait for next frame
-                current_time = time.time()
-                elapsed = current_time - last_frame_time
-                if elapsed < frame_interval:
-                    time.sleep(frame_interval - elapsed)
+                try:
+                    # Calculate time to wait for next frame
+                    current_time = time.time()
+                    elapsed = current_time - last_frame_time
+                    if elapsed < frame_interval:
+                        time.sleep(frame_interval - elapsed)
 
-                ret, frame = cap.read()
-                if not ret:
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset video
-                    continue
+                    ret, frame = cap.read()
+                    if not ret:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset video
+                        continue
 
-                frame_count += 1
-                if frame_count % 2 != 0:  # Process every other frame
-                    continue
+                    frame_count += 1
+                    if frame_count % 2 != 0:  # Process every other frame
+                        continue
 
-                # Process frame
-                frame = cv2.resize(frame, (self.target_width, self.target_height))
-                
-                # Add frame to continuous buffer first
-                self.update_continuous_buffer(frame)
-                
-                with torch.no_grad():
-                    results = self.model.predict(
-                        frame,
-                        conf=0.25,
-                        device=self.device,
-                        half=True if self.device == 'cuda' else False,
-                        iou=0.45,
-                        max_det=10,
-                        retina_masks=False,
-                        show_boxes=True,
-                        verbose=self.verbose
-                    )
+                    # Process frame
+                    frame = cv2.resize(frame, (self.target_width, self.target_height))
+                    
+                    # Add frame to continuous buffer first
+                    self.update_continuous_buffer(frame)
+                    
+                    with torch.no_grad():
+                        results = self.model.predict(
+                            frame,
+                            conf=0.25,
+                            device=self.device,
+                            half=True if self.device == 'cuda' else False,
+                            iou=0.45,
+                            max_det=10,
+                            retina_masks=False,
+                            show_boxes=True,
+                            verbose=self.verbose
+                        )
 
-                frame_result = {
-                    "label": "normal", 
-                    "confidence": 0.0, 
-                    "timestamp": datetime.now(), 
-                    "frame": frame.copy(),
-                    "frame_number": frame_count
-                }
-                
-                if len(results[0].boxes) > 0:
-                    boxes = results[0].boxes
-                    boxes_np = boxes.xyxy.cpu().numpy()
-                    scores = boxes.conf.cpu().numpy()
-                    labels = boxes.cls.cpu().numpy()
-                    masks = results[0].masks
+                    frame_result = {
+                        "label": "normal", 
+                        "confidence": 0.0, 
+                        "timestamp": datetime.now(), 
+                        "frame": frame.copy(),
+                        "frame_number": frame_count
+                    }
+                    
+                    if len(results[0].boxes) > 0:
+                        boxes = results[0].boxes
+                        boxes_np = boxes.xyxy.cpu().numpy()
+                        scores = boxes.conf.cpu().numpy()
+                        labels = boxes.cls.cpu().numpy()
+                        masks = results[0].masks
 
-                    # Apply NMS
-                    areas = (boxes_np[:, 2] - boxes_np[:, 0]) * (boxes_np[:, 3] - boxes_np[:, 1])
-                    idxs = cv2.dnn.NMSBoxes(
-                        boxes_np.tolist(),
-                        scores.tolist(),
-                        0.25,  # confidence threshold
-                        0.45   # NMS IoU threshold
-                    )
+                        # Apply NMS
+                        areas = (boxes_np[:, 2] - boxes_np[:, 0]) * (boxes_np[:, 3] - boxes_np[:, 1])
+                        idxs = cv2.dnn.NMSBoxes(
+                            boxes_np.tolist(),
+                            scores.tolist(),
+                            0.25,  # confidence threshold
+                            0.45   # NMS IoU threshold
+                        )
 
-                    if len(idxs) > 0:
-                        if isinstance(idxs, np.ndarray):
-                            idxs = idxs.flatten()
+                        if len(idxs) > 0:
+                            if isinstance(idxs, np.ndarray):
+                                idxs = idxs.flatten()
 
-                        # Update detections
-                        boxes_np = boxes_np[idxs]
-                        scores = scores[idxs]
-                        labels = labels[idxs]
-                        if masks is not None:
-                            masks = masks[idxs]
+                            # Update detections
+                            boxes_np = boxes_np[idxs]
+                            scores = scores[idxs]
+                            labels = labels[idxs]
+                            if masks is not None:
+                                masks = masks[idxs]
 
-                        # Create modified results with filtered detections
-                        modified_results = results[0].new()
-                        
-                        # Update analysis counters
-                        self.total_events += len(boxes_np)
-                        
-                        # Modify labels based on confidence threshold
-                        confidence_threshold = 0.3 if self.test_mode else 0.4
-                        
-                        mask = (labels == 1) & (scores < confidence_threshold)
-                        modified_labels = labels.copy()
-                        modified_labels[mask] = 0
-
-                        # Track highest suspicious confidence for frame
-                        max_suspicious_confidence = 0.0
-                        is_frame_suspicious = False
-                        
-                        # Draw boxes with proper classification
-                        for i in range(len(boxes_np)):
-                            box = boxes_np[i].astype(int)
-                            score = scores[i]
-                            is_suspicious = labels[i] == 1 and score >= confidence_threshold
-                            label = "Suspicious" if is_suspicious else "Normal"
-                            color = (0, 0, 255) if is_suspicious else (0, 255, 0)
+                            # Create modified results with filtered detections
+                            modified_results = results[0].new()
                             
-                            if is_suspicious:
-                                self.suspicious_events += 1
-                                is_frame_suspicious = True
-                                max_suspicious_confidence = max(max_suspicious_confidence, score)
+                            # Update analysis counters
+                            self.total_events += len(boxes_np)
                             
-                            cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), color, 2)
-                            cv2.putText(frame, 
-                                      f"{label} {score:.2f}", 
-                                      (box[0], box[1] - 10),
-                                      cv2.FONT_HERSHEY_SIMPLEX, 
-                                      0.5, color, 2)
-                                      
-                        # Update frame result
-                        if is_frame_suspicious:
-                            frame_result["label"] = "suspicious"
-                            frame_result["confidence"] = max_suspicious_confidence
+                            # Modify labels based on confidence threshold
+                            confidence_threshold = 0.3 if self.test_mode else 0.4
+                            
+                            mask = (labels == 1) & (scores < confidence_threshold)
+                            modified_labels = labels.copy()
+                            modified_labels[mask] = 0
 
-                # Add frame to main buffer with frame number for ordering
-                self.frame_buffer.append(frame_result)
-                
-                # Maintain sliding buffer
-                if len(self.frame_buffer) > self.buffer_size:
-                    self.frame_buffer = self.frame_buffer[-self.buffer_size:]
-                
-                # Adjust buffer size based on activity
-                self.adjust_buffer_size()
-                
-                # Check for alerts
-                self.check_for_alerts()
+                            # Track highest suspicious confidence for frame
+                            max_suspicious_confidence = 0.0
+                            is_frame_suspicious = False
+                            
+                            # Draw boxes with proper classification
+                            for i in range(len(boxes_np)):
+                                box = boxes_np[i].astype(int)
+                                score = scores[i]
+                                is_suspicious = labels[i] == 1 and score >= confidence_threshold
+                                label = "Suspicious" if is_suspicious else "Normal"
+                                color = (0, 0, 255) if is_suspicious else (0, 255, 0)
+                                
+                                if is_suspicious:
+                                    self.suspicious_events += 1
+                                    is_frame_suspicious = True
+                                    max_suspicious_confidence = max(max_suspicious_confidence, score)
+                                
+                                cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), color, 2)
+                                cv2.putText(frame, 
+                                          f"{label} {score:.2f}", 
+                                          (box[0], box[1] - 10),
+                                          cv2.FONT_HERSHEY_SIMPLEX, 
+                                          0.5, color, 2)
+                                          
+                            # Update frame result
+                            if is_frame_suspicious:
+                                frame_result["label"] = "suspicious"
+                                frame_result["confidence"] = max_suspicious_confidence
 
-                # Convert frame to base64 with consistent quality
-                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                frame_base64 = base64.b64encode(buffer).decode('utf-8')
-                
-                with self.lock:
-                    self.frame_data = frame_base64
-                
-                # Send analysis data if needed
-                self.send_analysis_data()
+                    # Add frame to main buffer with frame number for ordering
+                    self.frame_buffer.append(frame_result)
+                    
+                    # Maintain sliding buffer
+                    if len(self.frame_buffer) > self.buffer_size:
+                        self.frame_buffer = self.frame_buffer[-self.buffer_size:]
+                    
+                    # Adjust buffer size based on activity
+                    self.adjust_buffer_size()
+                    
+                    # Check for alerts
+                    self.check_for_alerts()
 
-                # Update last frame time
-                last_frame_time = time.time()
+                    # Convert frame to base64 with consistent quality and format
+                    try:
+                        # Use PNG for better quality and compatibility
+                        _, buffer = cv2.imencode('.png', frame, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+                        frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                        
+                        with self.lock:
+                            self.frame_data = frame_base64
+                            last_frame_data = frame_base64  # Store last successful frame
+                    except Exception as e:
+                        print(f"Error encoding frame: {e}")
+                        # Use last successful frame if available
+                        if last_frame_data:
+                            with self.lock:
+                                self.frame_data = last_frame_data
+                    
+                    # Send analysis data if needed
+                    self.send_analysis_data()
+
+                    # Update last frame time
+                    last_frame_time = time.time()
+
+                except Exception as frame_error:
+                    print(f"Error processing frame: {frame_error}")
+                    # Use last successful frame if available
+                    if last_frame_data:
+                        with self.lock:
+                            self.frame_data = last_frame_data
+                    continue
 
         except Exception as e:
             print(f"Error in detection loop: {e}")
