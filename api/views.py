@@ -222,22 +222,29 @@ def get_cameras(request):
         camera_list = []
         for camera in cameras:
             camera_id = camera.camera_id
+            # Check if video file exists before starting detection
+            if not os.path.exists(camera.video_path):
+                print(f"Warning: Video file not found for camera {camera_id} at {camera.video_path}. Skipping this camera.")
+                continue
             with detector_lock:
                 if camera_id not in detector_instances:
                     print(f"Initializing detector for camera {camera_id}")
                     detector = ShopliftDetector()
-                    if detector.start_detection(camera.video_path, camera_id, token):
-                        detector_instances[camera_id] = detector
-                        print(f"Successfully started detection for camera {camera_id}")
-                    else:
-                        print(f"Failed to start detection for camera {camera_id}")
+                    try:
+                        if detector.start_detection(camera.video_path, camera_id, token):
+                            detector_instances[camera_id] = detector
+                            print(f"Successfully started detection for camera {camera_id}")
+                        else:
+                            print(f"Failed to start detection for camera {camera_id}")
+                    except FileNotFoundError as e:
+                        print(f"Error: {e}. Skipping camera {camera_id}.")
+                        continue
                 else:
                     # Update the auth token in existing detector
                     detector = detector_instances[camera_id]
                     if detector.auth_token != token:
                         print(f"Updating auth token for camera {camera_id}")
                         detector.auth_token = token
-            
             camera_list.append({
                 'id': camera_id,
                 'path': camera.video_path,
