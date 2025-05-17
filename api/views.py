@@ -58,61 +58,92 @@ people_counter_detectors = {}
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def connect_camera(request):
-    data = json.loads(request.body)
-    video_path = data.get('video_path')
-    camera_name = data.get('name', 'Camera')  # Get camera name if provided
-    
-    if not video_path:
-        return JsonResponse({
-            'status': 'error', 
-            'message': 'Missing video_path'
-        }, status=400)
-    
     try:
-        with detector_lock:
-            # Generate a unique identifier for this camera
-            camera_id = str(uuid.uuid4())
+        data = json.loads(request.body)
+        video_path = data.get('video_path')
+        camera_name = data.get('name', 'Camera')  # Get camera name if provided
+        
+        if not video_path:
+            return JsonResponse({
+                'status': 'error', 
+                'message': 'Missing video_path'
+            }, status=400)
+        
+        # Verify video file exists
+        if not os.path.exists(video_path):
+            print(f"Error: Video file not found at {video_path}")
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Video file not found at {video_path}'
+            }, status=400)
             
-            # Create camera record in database
-            camera = Camera.objects.create(
-                user=request.user,
-                camera_id=camera_id,
-                video_path=video_path,
-                camera_type='shoplift',
-                name=camera_name
-            )
-            
-            # Get auth token
-            token = request.META.get('HTTP_AUTHORIZATION', '').split(' ')[1] if 'HTTP_AUTHORIZATION' in request.META else None
-            if not token:
-                # If token not in header, generate a new one
-                refresh = RefreshToken.for_user(request.user)
-                token = str(refresh.access_token)
-            
-            # Initialize detector for this camera
-            detector = ShopliftDetector()
-            result = detector.start_detection(video_path, camera_id, token)
-            
-            if result:
-                detector_instances[camera_id] = detector
+        try:
+            with detector_lock:
+                # Generate a unique identifier for this camera
+                camera_id = str(uuid.uuid4())
                 
-                return JsonResponse({
-                    'status': 'success', 
-                    'camera_id': camera_id,
-                    'message': 'Camera connected successfully'
-                })
-            else:
-                # If detector fails to start, delete the camera record
-                camera.delete()
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Failed to initialize detection'
-                }, status=500)
-    except Exception as e:
-        print(f"Error connecting camera: {str(e)}")
+                # Create camera record in database
+                camera = Camera.objects.create(
+                    user=request.user,
+                    camera_id=camera_id,
+                    video_path=video_path,
+                    camera_type='shoplift',
+                    name=camera_name,
+                    is_active=True
+                )
+                
+                # Get auth token
+                token = request.META.get('HTTP_AUTHORIZATION', '').split(' ')[1] if 'HTTP_AUTHORIZATION' in request.META else None
+                if not token:
+                    # If token not in header, generate a new one
+                    refresh = RefreshToken.for_user(request.user)
+                    token = str(refresh.access_token)
+                
+                print(f"Initializing detector for camera {camera_id} with video path: {video_path}")
+                
+                # Initialize detector for this camera
+                detector = ShopliftDetector()
+                result = detector.start_detection(video_path, camera_id, token)
+                
+                if result:
+                    detector_instances[camera_id] = detector
+                    print(f"Successfully connected camera {camera_id}")
+                    
+                    return JsonResponse({
+                        'status': 'success', 
+                        'camera_id': camera_id,
+                        'message': 'Camera connected successfully'
+                    })
+                else:
+                    # If detector fails to start, delete the camera record
+                    print(f"Failed to initialize detection for camera {camera_id}")
+                    camera.delete()
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'Failed to initialize detection'
+                    }, status=500)
+        except Exception as e:
+            print(f"Error in camera connection process: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Error connecting camera: {str(e)}'
+            }, status=500)
+            
+    except json.JSONDecodeError:
+        print("Invalid JSON in request body")
         return JsonResponse({
             'status': 'error',
-            'message': str(e)
+            'message': 'Invalid JSON in request body'
+        }, status=400)
+    except Exception as e:
+        print(f"Unexpected error in connect_camera: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Unexpected error: {str(e)}'
         }, status=500)
 
 @api_view(['POST'])
