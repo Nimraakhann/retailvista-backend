@@ -22,6 +22,14 @@ environ.Env.read_env()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Frontend and API URLs
+FRONTEND_URL = env('FRONTEND_URL', default='https://retail-vista.netlify.app')
+API_URL = env('API_URL', default='https://packets-duration-decor-boss.trycloudflare.com')
+CORS_ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+]
+
+
 print("BASE_DIR:", BASE_DIR)
 print("MEDIA_ROOT:", os.path.join(BASE_DIR, 'media'))
 

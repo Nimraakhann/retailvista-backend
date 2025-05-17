@@ -12,6 +12,7 @@ import requests
 from datetime import datetime, timedelta
 import io
 import tempfile
+from django.conf import settings
 
 class ShopliftDetector:
     def __init__(self):
@@ -161,7 +162,8 @@ class ShopliftDetector:
                         thumbnail_base64 = base64.b64encode(thumbnail_data).decode('utf-8')
 
                         # Send notification
-                        notification_url = 'http://localhost:8000/api/shoplifting-in-progress/'
+                        api_url = settings.API_URL
+                        notification_url = f'{api_url}/api/shoplifting-in-progress/'
                         headers = {'Authorization': f'Bearer {self.auth_token}'}
                         data = {
                             'camera_id': self.camera_id,
@@ -304,7 +306,8 @@ class ShopliftDetector:
 
                 # Update alert with video evidence
                 try:
-                    url = 'http://localhost:8000/api/update-alert-evidence/'
+                    api_url = settings.API_URL
+                    url = f'{api_url}/api/update-alert-evidence/'
                     with open(temp_video_path, 'rb') as video_file, open(temp_thumb_path, 'rb') as thumb_file:
                         files = {
                             'video_clip': (f'evidence_{timestamp}.mp4', video_file, 'video/mp4'),
@@ -432,7 +435,7 @@ class ShopliftDetector:
                 }
                 
                 response = requests.post(
-                    'http://localhost:8000/api/update-detection-data/',
+                    f'{settings.API_URL}/api/update-detection-data/',
                     json=data,
                     headers=headers
                 )
@@ -863,7 +866,8 @@ class ShopliftDetector:
             
             # Send completed alert to backend
             try:
-                url = 'http://localhost:8000/api/update-alert-evidence/'
+                api_url = settings.API_URL
+                url = f'{api_url}/api/update-alert-evidence/'
                 
                 print(f"Sending complete alert evidence to backend for alert ID: {alert_id}")
                 

@@ -6,6 +6,7 @@ import json
 import sys
 import os
 import time
+from django.conf import settings
 
 def send_test_notification(camera_id, token=None):
     """Send a test notification to the shoplifting-in-progress endpoint"""
@@ -85,7 +86,7 @@ def send_test_notification(camera_id, token=None):
     print("Sending request to http://localhost:8000/api/shoplifting-in-progress/")
     try:
         response = requests.post(
-            'http://localhost:8000/api/shoplifting-in-progress/',
+            f'{settings.API_URL}/api/shoplifting-in-progress/',
             json=data,
             headers=headers,
             timeout=10

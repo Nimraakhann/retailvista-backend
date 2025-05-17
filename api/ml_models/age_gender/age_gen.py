@@ -12,6 +12,7 @@ from threading import Lock
 import os
 import time
 import requests
+from django.conf import settings
 
 class AgeGenderDetector:
     def __init__(self):
@@ -108,7 +109,7 @@ class AgeGenderDetector:
                 }
                 
                 response = requests.post(
-                    'http://localhost:8000/api/update-age-gender-data/',
+                    f'{settings.API_URL}/api/update-age-gender-data/',
                     json=data,
                     headers=headers
                 )

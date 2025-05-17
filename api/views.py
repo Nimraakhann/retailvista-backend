@@ -666,7 +666,7 @@ def reset_password(request):
         subject = 'Password Reset Request'
         message = f'''
         Click the following link to reset your password:
-        http://localhost:5173/reset-password?uid={uid}&token={token}
+        {settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}
         
         This link will expire in 24 hours.
         '''
@@ -849,7 +849,8 @@ def signup(request):
         )
 
         # Send verification email
-        verification_link = f"http://localhost:5173/verify-email?token={verification_token}"
+        frontend_url = settings.FRONTEND_URL
+        verification_link = f"{frontend_url}/verify-email?token={verification_token}"
         send_mail(
             'Verify your email - Retail Vista',
             f'''Welcome to Retail Vista!
@@ -1056,7 +1057,7 @@ def request_password_reset(request):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         
         # Create reset link
-        reset_link = f'http://localhost:5173/reset-password?uid={uid}&token={token}'
+        reset_link = f'{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}'
         
         # Send email
         subject = 'Password Reset Request'
