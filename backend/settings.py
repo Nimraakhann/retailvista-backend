@@ -32,7 +32,7 @@ print("MEDIA_ROOT:", os.path.join(BASE_DIR, 'media'))
 SECRET_KEY = env('DJANGO_SECRET_KEY', default='django-insecure-q&f3#o=92y2ebdm=0cqy%obm&8t4zfp$@*c%(#q+d%6r&bdui^')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env.bool('DJANGO_DEBUG', default=False)
+DEBUG = env.bool('DJANGO_DEBUG', default=True)
 
 ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS', default=['*'])
 
