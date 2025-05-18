@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Frontend and API URLs
 FRONTEND_URL = env('FRONTEND_URL', default='https://retail-vista.netlify.app')
-API_URL = env('API_URL', default='https://nhs-gorgeous-fuzzy-b.trycloudflare.com')
+API_URL = env('API_URL', default='https://geology-gb-consultancy-imperial.trycloudflare.com')
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
 ]
