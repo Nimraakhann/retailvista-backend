@@ -343,69 +343,65 @@ def get_age_gender_cameras(request):
 @permission_classes([IsAuthenticated])
 def delete_camera(request, camera_id):
     try:
+        print(f"Attempting to delete camera: {camera_id} for user: {request.user}")
         with detector_lock:
             camera = Camera.objects.filter(
                 camera_id=camera_id,
                 user=request.user
             ).first()
             
-            if camera:
-                # Stop and clean up detector instance
+            if not camera:
+                print("Camera not found!")
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Camera not found'
+                })
+
+            print(f"Camera found: {camera.camera_id}, is_active: {camera.is_active}")
+            # Mark camera as inactive and save immediately
+            camera.is_active = False
+            camera.save()
+
+        # Respond to frontend immediately
+        response = JsonResponse({
+            'status': 'success',
+            'message': 'Camera marked as inactive. Cleanup in progress.'
+        })
+
+        # Do the heavy cleanup in a background thread
+        def cleanup():
+            with detector_lock:
                 if camera_id in detector_instances:
                     try:
                         detector = detector_instances[camera_id]
                         print(f"Stopping detection for camera {camera_id}")
-                        
-                        # Set a flag to prevent further alert generation
                         detector.is_stopping = True
-                        
-                        # Stop detection (should terminate threads)
                         detector.stop_detection()
-                        
                         # Clear any alert-related state
                         if hasattr(detector, 'current_alert_id'):
                             print(f"Cleaning up in-progress alert for camera {camera_id}")
                             try:
                                 from .models import ShopliftingAlert
-                                # Get any in-progress alerts for this camera
                                 in_progress_alerts = ShopliftingAlert.objects.filter(
                                     camera=camera,
                                     status='recording_in_progress'
                                 )
-                                # Delete these alerts to prevent notifications
                                 if in_progress_alerts.exists():
                                     print(f"Deleting {in_progress_alerts.count()} in-progress alerts")
                                     in_progress_alerts.delete()
                             except Exception as alert_err:
                                 print(f"Error cleaning up alerts: {alert_err}")
-                        
-                        # Allow time for threads to terminate gracefully
                         import time
                         time.sleep(0.5)
-                        
-                        # Remove from instances dictionary
                         del detector_instances[camera_id]
                         print(f"Detector instance for camera {camera_id} removed")
                     except Exception as detector_err:
                         print(f"Error stopping detector: {detector_err}")
-                
-                # Mark camera as inactive
-                camera.is_active = False
-                camera.save()
-                
-                # Force Python garbage collection to clean up resources
                 import gc
                 gc.collect()
-                
-                return JsonResponse({
-                    'status': 'success',
-                    'message': 'Camera deleted and all resources cleaned up'
-                })
-                
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Camera not found'
-        })
+                print(f"Cleanup complete for camera {camera_id}")
+        threading.Thread(target=cleanup, daemon=True).start()
+        return response
     except Exception as e:
         print(f"Error deleting camera: {str(e)}")
         import traceback
