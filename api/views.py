@@ -2707,8 +2707,6 @@ def check_camera_status(request, camera_id):
         }, status=500)
 
 @api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
 def serve_video(request, alert_id):
     """Serve video files with proper MIME type and headers"""
     try:
@@ -2722,10 +2720,7 @@ def serve_video(request, alert_id):
         
         # Get the alert
         try:
-            alert = ShopliftingAlert.objects.get(
-                id=alert_id,
-                camera__user=request.user
-            )
+            alert = ShopliftingAlert.objects.get(id=alert_id)
             logger.info(f"Found alert {alert_id}")
         except ShopliftingAlert.DoesNotExist:
             logger.error(f"Alert {alert_id} not found")
