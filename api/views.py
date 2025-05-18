@@ -42,6 +42,7 @@ from .ml_models.people_counter.PeopleCounterDetector import PeopleCounterDetecto
 from .models import DetectionData
 from django.db.models import Sum, Count
 from django.db.models.functions import TruncHour, TruncDay, TruncWeek, TruncMonth
+import re
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -2708,63 +2709,53 @@ def check_camera_status(request, camera_id):
 
 @api_view(['GET'])
 def serve_video(request, alert_id):
-    """Serve video files with proper MIME type and headers"""
-    try:
-        from django.http import FileResponse, HttpResponse
-        from .models import ShopliftingAlert
-        import mimetypes
-        import logging
+    from .models import ShopliftingAlert
+    import logging
+    import mimetypes
+    import os
 
-        logger = logging.getLogger(__name__)
-        logger.info(f"Attempting to serve video for alert {alert_id}")
-        
-        # Get the alert
-        try:
-            alert = ShopliftingAlert.objects.get(id=alert_id)
-            logger.info(f"Found alert {alert_id}")
-        except ShopliftingAlert.DoesNotExist:
-            logger.error(f"Alert {alert_id} not found")
-            return HttpResponse('Alert not found', status=404)
-        
-        if not alert.video_clip:
-            logger.error(f"No video file found for alert {alert_id}")
-            return HttpResponse('No video file found', status=404)
-            
-        # Get the file path
-        file_path = alert.video_clip.path
-        logger.info(f"Video file path: {file_path}")
-        
-        if not os.path.exists(file_path):
-            logger.error(f"Video file does not exist at path: {file_path}")
-            return HttpResponse('Video file not found on server', status=404)
-            
-        # Get file size
-        file_size = os.path.getsize(file_path)
-        logger.info(f"Video file size: {file_size} bytes")
-        
-        # Determine content type
-        content_type, _ = mimetypes.guess_type(file_path)
-        if not content_type:
-            content_type = 'video/mp4'  # Default to mp4 if can't determine
-        logger.info(f"Content type: {content_type}")
-        
-        # Open file in binary mode
-        file = open(file_path, 'rb')
-        
-        # Create response with proper headers
-        response = FileResponse(file, content_type=content_type)
-        response['Content-Length'] = file_size
-        response['Content-Disposition'] = f'inline; filename="{os.path.basename(file_path)}"'
-        response['Accept-Ranges'] = 'bytes'
-        
-        # Add CORS headers
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        
-        logger.info(f"Serving video file with headers: {dict(response.headers)}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error serving video: {str(e)}", exc_info=True)
-        return HttpResponse(f'Error serving video: {str(e)}', status=500)
+    logger = logging.getLogger(__name__)
+    try:
+        alert = ShopliftingAlert.objects.get(id=alert_id)
+    except ShopliftingAlert.DoesNotExist:
+        return HttpResponse('Alert not found', status=404)
+
+    if not alert.video_clip:
+        return HttpResponse('No video file found', status=404)
+
+    file_path = alert.video_clip.path
+    if not os.path.exists(file_path):
+        return HttpResponse('Video file not found on server', status=404)
+
+    file_size = os.path.getsize(file_path)
+    content_type, _ = mimetypes.guess_type(file_path)
+    if not content_type:
+        content_type = 'video/mp4'
+
+    range_header = request.META.get('HTTP_RANGE', '').strip()
+    if range_header:
+        range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+        if range_match:
+            first_byte, last_byte = range_match.groups()
+            first_byte = int(first_byte)
+            last_byte = int(last_byte) if last_byte else file_size - 1
+            length = last_byte - first_byte + 1
+
+            with open(file_path, 'rb') as f:
+                f.seek(first_byte)
+                data = f.read(length)
+            response = HttpResponse(data, status=206, content_type=content_type)
+            response['Content-Range'] = f'bytes {first_byte}-{last_byte}/{file_size}'
+            response['Accept-Ranges'] = 'bytes'
+            response['Content-Length'] = str(length)
+            response['Content-Disposition'] = f'inline; filename="{os.path.basename(file_path)}"'
+            response['Access-Control-Allow-Origin'] = '*'
+            return response
+
+    # No Range header; serve the whole file
+    response = FileResponse(open(file_path, 'rb'), content_type=content_type)
+    response['Content-Length'] = str(file_size)
+    response['Accept-Ranges'] = 'bytes'
+    response['Content-Disposition'] = f'inline; filename="{os.path.basename(file_path)}"'
+    response['Access-Control-Allow-Origin'] = '*'
+    return response
