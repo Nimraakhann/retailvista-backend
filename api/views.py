@@ -2133,7 +2133,7 @@ def get_shoplifting_alerts(request):
                 'timestamp': alert.timestamp,
                 'is_reviewed': alert.is_reviewed,
                 'video_ready': alert.video_ready,
-                'video_clip': f"{settings.API_URL}/serve-video/{alert.id}/" if alert.video_clip else None,
+                'video_clip': f"{settings.API_URL}/api/serve-video/{alert.id}/" if alert.video_clip else None,
                 'thumbnail': request.build_absolute_uri(alert.video_thumbnail.url) if alert.video_thumbnail else None,
             })
             
