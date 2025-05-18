@@ -20,7 +20,7 @@ from django.utils.encoding import force_bytes, force_str
 import logging
 from .models import Promotion
 from .serializers import PromotionSerializer
-from django.http import JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.core.mail import send_mail
