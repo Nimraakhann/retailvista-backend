@@ -2132,7 +2132,7 @@ def get_shoplifting_alerts(request):
                 'timestamp': alert.timestamp,
                 'is_reviewed': alert.is_reviewed,
                 'video_ready': alert.video_ready,
-                'video_clip': request.build_absolute_uri(alert.video_clip.url) if alert.video_clip else None,
+                'video_clip': request.build_absolute_uri(f'/api/serve-video/{alert.id}/') if alert.video_clip else None,
                 'thumbnail': request.build_absolute_uri(alert.video_thumbnail.url) if alert.video_thumbnail else None,
             })
             
@@ -2705,3 +2705,34 @@ def check_camera_status(request, camera_id):
             'status': 'error',
             'message': str(e)
         }, status=500)
+
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def serve_video(request, alert_id):
+    """Serve video files with proper MIME type"""
+    try:
+        from django.http import FileResponse
+        from .models import ShopliftingAlert
+        
+        # Get the alert
+        alert = ShopliftingAlert.objects.get(
+            id=alert_id,
+            camera__user=request.user
+        )
+        
+        if not alert.video_clip:
+            return Response({'error': 'No video file found'}, status=404)
+            
+        # Get the file path
+        file_path = alert.video_clip.path
+        
+        # Serve the file with proper MIME type
+        response = FileResponse(open(file_path, 'rb'), content_type='video/mp4')
+        response['Content-Disposition'] = f'inline; filename="{os.path.basename(file_path)}"'
+        return response
+        
+    except ShopliftingAlert.DoesNotExist:
+        return Response({'error': 'Alert not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)

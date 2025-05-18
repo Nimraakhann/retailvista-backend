@@ -22,7 +22,8 @@ from .views import (
     check_for_alerts,
     set_test_mode,
     force_trigger_alert,
-    check_camera_status
+    check_camera_status,
+    serve_video
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -91,4 +92,5 @@ urlpatterns = [
     # Testing endpoints
     path('set-test-mode/<str:camera_id>/', set_test_mode, name='set_test_mode'),
     path('force-trigger-alert/<str:camera_id>/', force_trigger_alert, name='force_trigger_alert'),
+    path('serve-video/<int:alert_id>/', serve_video, name='serve_video'),
 ]
